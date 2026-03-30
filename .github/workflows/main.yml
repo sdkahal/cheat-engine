@@ -85,25 +85,34 @@ jobs:
             msbuild "$($monoStoreSln.FullName)" $msArgs.Split(' ') /fl "/flp:logfile=build_output/logs/MonoDataCollector.errors.log;errorsonly"
           }
 
-      # 4. 整理并打包产物 (if: always 确保报错时也能拿到 log)
+      # 4. 整理产物：直接打包整个 bin 目录 (if: always 确保报错时也能拿到产物和 log)
       - name: Organize Artifacts
         if: always()
         shell: powershell
         run: |
-          # 确保输出目录存在
+          # 1. 创建输出根目录
           if (!(Test-Path "build_output")) { mkdir build_output }
-          
-          # 抓取所有包含 cheatengine 字样的 EXE 并重命名
-          Get-ChildItem -Path "." -Filter "cheatengine*.exe" -Recurse | Where-Object { $_.FullName -notmatch "obj|lib|backup|build_output" } | ForEach-Object {
-            copy $_.FullName "build_output/Cheat Engine.exe" -Force
+
+          # 2. 定位编译生成的 bin 目录 (通常在 Cheat Engine/bin)
+          $binDir = Get-ChildItem -Recurse -Directory -Filter "bin" | Where-Object { Test-Path "$($_.FullName)\cheatengine-x86_64.exe" } | Select-Object -First 1
+
+          if ($binDir) {
+            Write-Host "Found compiled bin directory at: $($binDir.FullName)"
+            # 将整个 bin 目录内容复制到 build_output
+            Copy-Item -Path "$($binDir.FullName)\*" -Destination "build_output" -Recurse -Force
+            
+            # 顺便改个名，让主程序看起来更清爽 (可选)
+            if (Test-Path "build_output\cheatengine-x86_64.exe") {
+              Rename-Item -Path "build_output\cheatengine-x86_64.exe" -NewName "Cheat Engine.exe"
+            }
+          } else {
+            Write-Host "Warning: Compiled bin directory not found. Trying to fallback to manual collection." -ForegroundColor Yellow
           }
 
-          # 抓取所有生成的 DLL
-          Get-ChildItem -Path "." -Filter "*.dll" -Recurse | Where-Object { $_.FullName -notmatch "obj|lib|backup|build_output" } | ForEach-Object {
-            copy $_.FullName build_output/ -Force
-          }
-
-          Write-Host "Final File List:"
+          # 3. 确保日志目录也被包含在内
+          # 这一步是为了让你在 build_output 里直接看到 logs 文件夹
+          # 注意：上面的 Prepare Log Directory 步骤建议改到 build_output 之外，或者最后移动
+          Write-Host "Final Folder Structure:"
           ls -Recurse build_output/
 
       - name: Upload Artifact
