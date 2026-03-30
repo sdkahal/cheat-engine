@@ -1,7 +1,7 @@
 name: Build Pure Cheat Engine
 
 on: 
-  workflow_dispatch: # 支持手动触发编译
+  workflow_dispatch: # 支持手动触发
 
 jobs:
   build:
@@ -10,54 +10,80 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive # 确保插件源码下载完整
 
-      # 1. 安装 Lazarus 环境 (核心构建工具)
+      # --- 方案 B: 缓存 Lazarus 环境 ---
+      - name: Cache Lazarus
+        id: cache-lazarus
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\lazarus
+            C:\fpc
+          key: ${{ runner.os }}-lazarus-2.2.2
+          restore-keys: |
+            ${{ runner.os }}-lazarus-
+
       - name: Install Lazarus
+        if: steps.cache-lazarus.outputs.cache-hit != 'true'
         uses: gcarreno/setup-lazarus@v3
         with:
-          lazarus-version: '2.2.2' # 匹配 README 要求的版本
+          lazarus-version: '2.2.2'
 
-      # 2. 编译 Cheat Engine 核心 (64位)
-      - name: Build CE Core (x86_64)
+      # 1. 编译核心及 Pascal 插件 (Lazarus/lazbuild)
+      - name: Build Pascal Projects (Core, Speedhack, VEH)
         run: |
-          lazbuild "Cheat Engine/cheatengine.lpi" --build-mode=Release
+          # 编译主程序
+          $coreLpi = Get-ChildItem -Recurse -Filter "cheatengine.lpi" | Select-Object -First 1
+          if ($coreLpi) {
+            lazbuild "$($coreLpi.FullName)" --build-mode=Release
+          }
 
-      # 3. 配置 MSBuild (用于编译 C++ 扩展插件)
+          # 编译 Speedhack (README 明确指出它是 .lpr)
+          $speedhackLpr = Get-ChildItem -Recurse -Filter "speedhack.lpr" | Select-Object -First 1
+          if ($speedhackLpr) {
+            echo "Building Speedhack from $($speedhackLpr.FullName)"
+            lazbuild "$($speedhackLpr.FullName)" --build-mode=Release
+          }
+
+          # 编译 VEH Debugger
+          $vehLpr = Get-ChildItem -Recurse -Filter "vehdebug.lpr" | Select-Object -First 1
+          if ($vehLpr) {
+            lazbuild "$($vehLpr.FullName)" --build-mode=Release
+          }
+
+      # 2. 配置 MSBuild 环境
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      # 4. 编译关键插件 (增加路径检查和自动寻址)
-      - name: Build Extensions (C++)
+      # 3. 编译 C++ 插件 (MSBuild/sln)
+      - name: Build C++ Extensions
         run: |
-          # 自动寻找 sln 文件，防止路径层级错误
-          $speedhackSln = Get-ChildItem -Recurse -Filter "speedhack.sln" | Select-Object -First 1
-          $dxMessSln = Get-ChildItem -Recurse -Filter "DirectXMess.sln" | Select-Object -First 1
-          
-          if ($speedhackSln) {
-            echo "Found Speedhack at $($speedhackSln.FullName)"
-            msbuild "$($speedhackSln.FullName)" /p:Configuration=Release /p:Platform=x64
-          } else {
-            echo "Error: speedhack.sln not found!"
-            exit 1
+          # 编译 D3D Overlay 支持
+          $dxSln = Get-ChildItem -Recurse -Filter "DirectXMess.sln" | Select-Object -First 1
+          if ($dxSln) {
+            echo "Building DirectXMess from $($dxSln.FullName)"
+            msbuild "$($dxSln.FullName)" /p:Configuration=Release /p:Platform=x64
           }
 
-          if ($dxMessSln) {
-            echo "Found DirectXMess at $($dxMessSln.FullName)"
-            msbuild "$($dxMessSln.FullName)" /p:Configuration=Release /p:Platform=x64
-          } else {
-            echo "Error: DirectXMess.sln not found!"
-            exit 1
+          # 编译 Mono 数据收集器 (可选)
+          $monoStoreSln = Get-ChildItem -Recurse -Filter "monodatacollector.sln" | Select-Object -First 1
+          if ($monoStoreSln) {
+            msbuild "$($monoStoreSln.FullName)" /p:Configuration=Release /p:Platform=x64
           }
 
-      # 5. 整理并打包产物
+      # 4. 整理并打包产物
       - name: Organize Artifacts
         run: |
           mkdir build_output
-          copy "Cheat Engine/bin/Cheat Engine.exe" build_output/
-          # 如果有生成的 dll，也一并复制
-          if (Test-Path "Cheat Engine/bin/*.dll") { copy "Cheat Engine/bin/*.dll" build_output/ }
+          # 递归寻找生成的 exe 和 dll 并汇总
+          Get-ChildItem -Path "." -Include "Cheat Engine.exe", "*.dll" -Recurse | ForEach-Object {
+              if ($_.FullName -notmatch "obj|lib|backup") { # 排除中间文件
+                  copy $_.FullName build_output/
+              }
+          }
 
-      # 6. 上传构建结果
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
