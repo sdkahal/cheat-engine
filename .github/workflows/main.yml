@@ -31,79 +31,64 @@ jobs:
         with:
           lazarus-version: '2.2.2'
 
-      # 1. 编译核心及 Pascal 插件 (Lazarus/lazbuild)
+      # 1. 编译核心及 Pascal 插件 (移除 Build Mode 限制)
       - name: Build Pascal Projects (Core, Speedhack, VEH)
         run: |
-          # 编译主程序
+          # 编译主程序 (强制 64 位)
           $coreLpi = Get-ChildItem -Recurse -Filter "cheatengine.lpi" | Select-Object -First 1
           if ($coreLpi) {
-            lazbuild "$($coreLpi.FullName)" --build-mode=Release
+            lazbuild "$($coreLpi.FullName)" --cpu=x86_64 --os=win64
           }
 
-          # 编译 Speedhack (README 明确指出它是 .lpr)
+          # 编译 Speedhack (去掉 --build-mode 参数，让它用默认配置)
           $speedhackLpr = Get-ChildItem -Recurse -Filter "speedhack.lpr" | Select-Object -First 1
           if ($speedhackLpr) {
-            echo "Building Speedhack from $($speedhackLpr.FullName)"
-            lazbuild "$($speedhackLpr.FullName)" --build-mode=Release
+            lazbuild "$($speedhackLpr.FullName)" --cpu=x86_64 --os=win64
           }
 
           # 编译 VEH Debugger
           $vehLpr = Get-ChildItem -Recurse -Filter "vehdebug.lpr" | Select-Object -First 1
           if ($vehLpr) {
-            lazbuild "$($vehLpr.FullName)" --build-mode=Release
+            lazbuild "$($vehLpr.FullName)" --cpu=x86_64 --os=win64
           }
 
       # 2. 配置 MSBuild 环境
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-     # 3. 编译 C++ 扩展 (MSBuild/sln)
+     # 3. 编译 C++ 扩展 (保持之前的 SDK 修复)
       - name: Build C++ Extensions
         run: |
-          # 定义通用参数，避免冗长
-          # v143 是 VS2022 工具集，10.0 会自动选择最新的 Win10/11 SDK
           $msArgs = "/p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0"
-
-          # 1. 编译 D3D Overlay 支持
+          
+          # 编译 DirectX 遮罩
           $dxSln = Get-ChildItem -Recurse -Filter "DirectXMess.sln" | Select-Object -First 1
           if ($dxSln) {
-            echo "Building DirectXMess: $($dxSln.FullName)"
             msbuild "$($dxSln.FullName)" $msArgs.Split(' ')
           }
 
-          # 2. 编译 Mono 数据收集器 (报错的那个项目)
+          # 编译 Mono 数据收集器
           $monoStoreSln = Get-ChildItem -Recurse -Filter "monodatacollector.sln" | Select-Object -First 1
           if ($monoStoreSln) {
-            echo "Building MonoDataCollector: $($monoStoreSln.FullName)"
             msbuild "$($monoStoreSln.FullName)" $msArgs.Split(' ')
           }
 
-      # 4. 整理并打包产物
+      # 4. 整理并打包产物 (模糊匹配 + 重命名)
       - name: Organize Artifacts
         run: |
           mkdir build_output
           
-          # A. 专门寻找主程序 (这是你最需要的)
-          Write-Host "Searching for Cheat Engine.exe..."
-          $ceExe = Get-ChildItem -Path "." -Filter "Cheat Engine*.exe" -Recurse | Where-Object { $_.FullName -notmatch "obj|lib|backup|framework" } | Select-Object -First 1
-          
-          if ($ceExe) {
-            Write-Host "Found EXE at: $($ceExe.FullName)"
-            copy "$($ceExe.FullName)" build_output/
-          } else {
-            Write-Error "Could not find Cheat Engine.exe! Check Pascal build logs."
-            exit 1
+          # 抓取所有包含 cheatengine 字样的 EXE 并重命名为简洁版
+          Get-ChildItem -Path "." -Filter "cheatengine*.exe" -Recurse | Where-Object { $_.FullName -notmatch "obj|lib|backup" } | ForEach-Object {
+            copy $_.FullName "build_output/Cheat Engine.exe"
           }
 
-          # B. 寻找所有的 DLL 插件 (Speedhack, Mono, DirectX 等)
-          Write-Host "Collecting DLL plugins..."
-          Get-ChildItem -Path "." -Filter "*.dll" -Recurse | ForEach-Object {
-              if ($_.FullName -notmatch "obj|lib|backup|framework") {
-                  copy $_.FullName build_output/
-              }
+          # 抓取所有 DLL
+          Get-ChildItem -Path "." -Filter "*.dll" -Recurse | Where-Object { $_.FullName -notmatch "obj|lib|backup" } | ForEach-Object {
+            copy $_.FullName build_output/
           }
 
-          # C. 验证结果
+          # 列表确认
           ls build_output/
 
       - name: Upload Artifact
