@@ -26,12 +26,28 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      # 4. 编译关键插件 (如 Speedhack 和 DirectX 注入)
-      # 这里只列举最常用的两个，如需更多可按需添加
+      # 4. 编译关键插件 (增加路径检查和自动寻址)
       - name: Build Extensions (C++)
         run: |
-          msbuild "Cheat Engine/speedhack/speedhack.sln" /p:Configuration=Release /p:Platform=x64
-          msbuild "Cheat Engine/DirectXMess/DirectXMess.sln" /p:Configuration=Release /p:Platform=x64
+          # 自动寻找 sln 文件，防止路径层级错误
+          $speedhackSln = Get-ChildItem -Recurse -Filter "speedhack.sln" | Select-Object -First 1
+          $dxMessSln = Get-ChildItem -Recurse -Filter "DirectXMess.sln" | Select-Object -First 1
+          
+          if ($speedhackSln) {
+            echo "Found Speedhack at $($speedhackSln.FullName)"
+            msbuild "$($speedhackSln.FullName)" /p:Configuration=Release /p:Platform=x64
+          } else {
+            echo "Error: speedhack.sln not found!"
+            exit 1
+          }
+
+          if ($dxMessSln) {
+            echo "Found DirectXMess at $($dxMessSln.FullName)"
+            msbuild "$($dxMessSln.FullName)" /p:Configuration=Release /p:Platform=x64
+          } else {
+            echo "Error: DirectXMess.sln not found!"
+            exit 1
+          }
 
       # 5. 整理并打包产物
       - name: Organize Artifacts
