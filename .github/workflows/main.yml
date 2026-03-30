@@ -82,12 +82,29 @@ jobs:
       - name: Organize Artifacts
         run: |
           mkdir build_output
-          # 递归寻找生成的 exe 和 dll 并汇总
-          Get-ChildItem -Path "." -Include "Cheat Engine.exe", "*.dll" -Recurse | ForEach-Object {
-              if ($_.FullName -notmatch "obj|lib|backup") { # 排除中间文件
+          
+          # A. 专门寻找主程序 (这是你最需要的)
+          Write-Host "Searching for Cheat Engine.exe..."
+          $ceExe = Get-ChildItem -Path "." -Filter "Cheat Engine*.exe" -Recurse | Where-Object { $_.FullName -notmatch "obj|lib|backup|framework" } | Select-Object -First 1
+          
+          if ($ceExe) {
+            Write-Host "Found EXE at: $($ceExe.FullName)"
+            copy "$($ceExe.FullName)" build_output/
+          } else {
+            Write-Error "Could not find Cheat Engine.exe! Check Pascal build logs."
+            exit 1
+          }
+
+          # B. 寻找所有的 DLL 插件 (Speedhack, Mono, DirectX 等)
+          Write-Host "Collecting DLL plugins..."
+          Get-ChildItem -Path "." -Filter "*.dll" -Recurse | ForEach-Object {
+              if ($_.FullName -notmatch "obj|lib|backup|framework") {
                   copy $_.FullName build_output/
               }
           }
+
+          # C. 验证结果
+          ls build_output/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
