@@ -75,14 +75,14 @@ jobs:
           $dxSln = Get-ChildItem -Recurse -Filter "DirectXMess.sln" | Select-Object -First 1
           if ($dxSln) {
             Write-Host "Compiling DirectXMess..."
-            msbuild "$($dxSln.FullName)" $msArgs.Split(' ') /fl /flp:logfile=build_output/logs/DirectXMess.errors.log;errorsonly
+            msbuild "$($dxSln.FullName)" $msArgs.Split(' ') /fl "/flp:logfile=build_output/logs/DirectXMess.errors.log;errorsonly"
           }
 
           # 编译 Mono 数据收集器
           $monoStoreSln = Get-ChildItem -Recurse -Filter "monodatacollector.sln" | Select-Object -First 1
           if ($monoStoreSln) {
             Write-Host "Compiling MonoDataCollector..."
-            msbuild "$($monoStoreSln.FullName)" $msArgs.Split(' ') /fl /flp:logfile=build_output/logs/MonoDataCollector.errors.log;errorsonly
+            msbuild "$($monoStoreSln.FullName)" $msArgs.Split(' ') /fl "/flp:logfile=build_output/logs/MonoDataCollector.errors.log;errorsonly"
           }
 
       # 4. 整理并打包产物 (if: always 确保报错时也能拿到 log)
