@@ -57,20 +57,23 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      # 3. 编译 C++ 插件 (MSBuild/sln)
+      # 3. 编译 C++ 扩展 (MSBuild/sln)
       - name: Build C++ Extensions
         run: |
-          # 编译 D3D Overlay 支持
+          # 1. 编译 D3D Overlay 支持
           $dxSln = Get-ChildItem -Recurse -Filter "DirectXMess.sln" | Select-Object -First 1
           if ($dxSln) {
-            echo "Building DirectXMess from $($dxSln.FullName)"
-            msbuild "$($dxSln.FullName)" /p:Configuration=Release /p:Platform=x64
+            echo "Building DirectXMess: $($dxSln.FullName)"
+            # 关键：增加 -p:PlatformToolset=v143 参数
+            msbuild "$($dxSln.FullName)" /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
           }
 
-          # 编译 Mono 数据收集器 (可选)
+          # 2. 编译 Mono 数据收集器 (报错的那个项目)
           $monoStoreSln = Get-ChildItem -Recurse -Filter "monodatacollector.sln" | Select-Object -First 1
           if ($monoStoreSln) {
-            msbuild "$($monoStoreSln.FullName)" /p:Configuration=Release /p:Platform=x64
+            echo "Building MonoDataCollector: $($monoStoreSln.FullName)"
+            # 关键：增加 -p:PlatformToolset=v143 参数
+            msbuild "$($monoStoreSln.FullName)" /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
           }
 
       # 4. 整理并打包产物
